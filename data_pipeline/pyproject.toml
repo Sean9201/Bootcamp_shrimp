@@ -1,0 +1,16 @@
+[project]
+name = "shrimp-data"
+version = "0.1.0"
+description = "흰다리새우 하이드로폰 녹음 데이터셋 관리"
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
