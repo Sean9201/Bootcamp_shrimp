@@ -94,5 +94,35 @@ for ev in eng.finish(): send(ev)
 
 ## 3. backend → frontend : REST API
 
-- 미정. 초안: `GET /health`, `POST /api/v1/analyses`(업로드, 202) → `GET /api/v1/analyses/{id}`(폴링) → `/timeseries`.
+기본 주소 `http://localhost:8000`. 자세한 입력·응답은 서버의 `/docs`, 설명은 `backend/README.md`.
+
+| 메서드 | 경로 | 응답 |
+|---|---|---|
+| GET | `/health` | `{status, ai: {classifier, baselines[]}, llm: {provider, configured, model}}` |
+| GET | `/api/v1/tanks` | `[{id, name, noise_condition, has_baseline}]` |
+| GET | `/api/v1/samples` | `[{id, tank_id, noise_condition, label, feeding_offset_sec, fed_at, feed_amount_g, size_mb}]` |
+| POST | `/api/v1/analyses` | multipart `file`(WAV), `tank_id`, `fed_at`?, `feeding_offset_sec`?(기본 600), `feed_amount_g`?, `speed`?(기본 40) → **202** 분석 요약 |
+| POST | `/api/v1/analyses/from-sample` | JSON `{sample_id, speed?}` → **202** 분석 요약 |
+| GET | `/api/v1/analyses?limit&tank_id` | 분석 요약 목록(최신순) |
+| GET | `/api/v1/analyses/{id}` | 상세: 요약 + `baseline{minutes, mu, lo, hi, metrics}` + `minutes[]` + `scores[]` + `alerts[]` + `comparison[]` + `metrics` + `insight` |
+| GET | `/api/v1/analyses/{id}/events` | **SSE**(text/event-stream), 줄마다 `data: {json}` |
+| GET | `/api/v1/alerts?acknowledged` | 알림 목록 |
+| POST | `/api/v1/alerts/{id}/ack` | 확인 처리된 알림 |
+| GET | `/api/v1/model/report` | 모델 평가(모크)·학습 기록 |
+
+분석 요약: `{id, tank_id, source(upload|sample), filename, status(queued|running|done|failed), speed, duration_sec,
+fed_at, feed_amount_g, created_at, max_grade, final_score, peak_cpm, auc10, error}`. 시각은 모두 시간대 포함 ISO8601.
+
+SSE 이벤트 순서: `meta` → (`progress`·`clicks`·`minute`·`score`·`alert` 반복) → `final` → `insight_pending` → `insight` → `done`.
+실패하면 `error` 후 종료. 2절의 엔진 이벤트에 아래가 더해진다.
+
+| type | 필드 |
+|---|---|
+| `meta` | `analysis_id, tank_id, noise_condition, speed, duration_sec, feeding_offset_sec, pre_min, post_min, thresholds{watch, alert}, baseline(위 상세와 같음 또는 null), classifier` |
+| `insight_pending` | — (LLM 응답 기다리는 중) |
+| `insight` | `content{summary, bullets[], recommendation}, source(gemini|template), model, attempts, problems[], facts` |
+| `done` / `error` | `analysis_id` / `message, detail` |
+| `snapshot` | 서버 재시작 등으로 이벤트 기록이 없을 때 상세 응답 전체를 한 번에 |
+
+- 처음 이벤트부터 다시 보내므로 화면은 언제 연결해도 그래프를 처음부터 그릴 수 있다.
 - 에러 형식: `{"error": {"code": "...", "message": "한국어 메시지", "details": ...}}`
