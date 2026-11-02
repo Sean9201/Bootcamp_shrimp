@@ -1,0 +1,44 @@
+# --- 공통 ---
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- 데이터·녹음·모델 (git 에 올리지 않음) ---
+*.wav
+*.flac
+*.mp3
+*.npy
+*.npz
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.db
+*.db-journal
+/data/
+backend/data/
+ai/data/
+data_pipeline/data/*
+!data_pipeline/data/README.md
+ai/artifacts/
+ai/runs/
+mlruns/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+build/
+
+# --- Node ---
+node_modules/
+dist/

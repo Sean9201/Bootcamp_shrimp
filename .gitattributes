@@ -1,0 +1,7 @@
+# 줄바꿈은 저장소에 LF 로 저장, 체크아웃 시 OS 에 맞춤
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.wav binary
