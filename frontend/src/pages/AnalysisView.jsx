@@ -37,7 +37,7 @@ export default function AnalysisView() {
   const meta = st.meta;
   const lm = liveMetrics(st);
   const last = st.scores[st.scores.length - 1];
-  const thr = meta?.thresholds ?? { watch: 1.25, alert: 2 };
+  const thr = meta?.thresholds ?? { watch: 1.25, alert: 2, onset_sd_floor_min: 0.7 };
   const hasBase = Boolean(meta?.baseline);
   const running = st.status === "running" || st.status === "connecting";
   const comparison = st.final?.comparison;
@@ -95,7 +95,8 @@ export default function AnalysisView() {
             <p className="muted small">같은 경과 시간의 정상 기준과 매 분 비교합니다. 2분 연속 기준 이상일 때 등급이 올라갑니다.</p>
           </Card>
           <Card title="주요 지표 비교">
-            {comparison ? <ComparisonTable rows={comparison} /> : <p className="muted">급이 후 30분 분석이 끝나면 표시됩니다.</p>}
+            {comparison ? <ComparisonTable rows={comparison} onsetFloor={thr.onset_sd_floor_min} />
+              : <p className="muted">급이 후 30분 분석이 끝나면 표시됩니다.</p>}
           </Card>
         </div>
       </div>

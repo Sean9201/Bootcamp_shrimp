@@ -3,7 +3,8 @@ import { useEffect, useReducer } from "react";
 import { eventsUrl } from "./api.js";
 import { maxGrade } from "./format.js";
 
-const DEFAULT_THRESHOLDS = { watch: 1.25, alert: 2.0 };
+// 서버 재시작 후 snapshot 에는 기준값이 없으므로 백엔드 AnomalyConfig 기본값을 쓴다
+const DEFAULT_THRESHOLDS = { watch: 1.25, alert: 2.0, onset_sd_floor_min: 0.7 };
 
 export const initialState = {
   status: "connecting",   // connecting | running | finalizing | done | failed
