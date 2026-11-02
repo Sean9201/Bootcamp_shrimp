@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 DATA_SOURCES = ("real", "synthetic")
 LABELS = ("normal", "abnormal", "unknown", None)
+NOISE_CONDITIONS = ("blocked", "operating")
 
 
 @dataclass
@@ -17,14 +18,20 @@ class SessionMeta:
 
     session_id: str
     tank: str
+    noise_condition: str                # blocked(소음 차단) | operating(운영 소음)
     fed_at: str                         # ISO8601, 시간대 포함 (+09:00)
     feeding_offset_sec: float           # 녹음 시작 기준 급이 시각(초)
+    day: int | None = None              # 측정 일차
     recorded_at: str | None = None
     feed_amount_g: float | None = None
+    feeding_duration_sec: float | None = None
     data_source: str = "real"
     label: str | None = None
+    water: dict | None = None           # {"start": {...}, "end": {...}}
+    events: list[dict] = field(default_factory=list)   # [{"time_sec", "note"}], WAV 시작 기준
+    residual_feed: dict | None = None   # {"recovered", "dry_mass_g", "reason"}
+    synthetic: dict | None = None       # 합성 세션일 때 생성 조건(정답 곡선 파라미터 등)
     notes: str = ""
-    problems: list[str] = field(default_factory=list, repr=False)
 
     def validate(self) -> list[str]:
         """형식 문제 목록(비어 있으면 정상)."""
@@ -33,6 +40,8 @@ class SessionMeta:
             p.append("session_id 가 비어 있음")
         if not self.tank:
             p.append("tank 가 비어 있음")
+        if self.noise_condition not in NOISE_CONDITIONS:
+            p.append(f"noise_condition 은 {NOISE_CONDITIONS} 중 하나")
         for name in ("fed_at", "recorded_at"):
             v = getattr(self, name)
             if v is None:
@@ -48,7 +57,14 @@ class SessionMeta:
             p.append(f"data_source 는 {DATA_SOURCES} 중 하나")
         if self.label not in LABELS:
             p.append(f"label 은 {LABELS} 중 하나")
+        if self.residual_feed and self.residual_feed.get("recovered") is False \
+                and self.residual_feed.get("dry_mass_g") is not None:
+            p.append("잔여 사료 회수 실패인데 dry_mass_g 가 있음 (null 로 둘 것)")
         return p
+
+    def to_json(self) -> str:
+        """meta.json 문자열."""
+        return json.dumps(asdict(self), ensure_ascii=False, indent=2)
 
 
 def load_session(session_dir: str | Path) -> tuple[SessionMeta, list[str]]:
