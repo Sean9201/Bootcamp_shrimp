@@ -7,26 +7,48 @@ backend 는 이 폴더의 파이썬 패키지 `shrimp_ai` 를 가져다 씁니�
 
 ```powershell
 ..\..\.venv\Scripts\python.exe -m pip install -r requirements.txt
+..\..\.venv\Scripts\python.exe -m pip install -e .
 ..\..\.venv\Scripts\python.exe -m pytest
-# backend 에서 쓰려면: ..\..\.venv\Scripts\python.exe -m pip install -e .
+
+# 학습 (2단계 CNN + 신호처리 베이스라인 임계값) → artifacts/click_cnn.pt, detector.json
+..\..\.venv\Scripts\python.exe -m shrimp_ai.train --data ..\data_pipeline\data\synthetic\mock_v1
+# 평가 (모델 A·B, 수조별 정상 기준 생성, 시연 세션) → artifacts/eval_report.md, baselines/*.json
+..\..\.venv\Scripts\python.exe -m shrimp_ai.evaluate --data ..\data_pipeline\data\synthetic\mock_v1
 ```
 
-## 구조 (예정)
+## 구조
+
+```
+청크(1초) ─► ① 후보 검출(신호처리) ─► ② CNN 판정 ─► 클릭 시각 ─► 분당 클릭 수 G(t) ─► 모델 B 점수·등급
+```
 
 ```
 src/shrimp_ai/
-  config.py      분석 파라미터 (대역·빈 크기·분석 창 — 하드코딩 금지)
-  metrics.py     평가 지표 (클릭 매칭 F1, CPM MAE)
-  detect/        클릭 검출기: 신호처리 Baseline → CNN (같은 인터페이스)
-  activity.py    CPM 집계, 급이 정렬 G(t), Peak·AUC·onset
-  anomaly.py     정상 기준(분 단위) 생성·비교 → 이상 점수·등급
-notebooks/       실험 노트북 (출력은 지우고 커밋)
-configs/         실험 설정
-artifacts/       모델 가중치·기준 JSON (git 제외)
-tests/
+  config.py            모든 파라미터(대역·임계값·창·가중치). 하드코딩 금지
+  sources.py           FileSource(배속 재생) / LiveSource(자리) — 실사용·시연은 이것만 다름
+  detect/candidates.py 1단계: 대역통과 → 에너지 포락선 → 최근 5초 잡음 대비 임계값 → 최고점 → 불응기 병합
+                       과거만 보고, 청크 크기와 무관하게 같은 결과. k 를 크게 주면 베이스라인 검출기
+  detect/cnn.py        2단계: 후보 주변 32 ms 스펙트로그램(1–20 kHz) → 작은 CNN(약 2.4만 파라미터)
+  activity.py          G(t), Peak·초기 10분 AUC·30분 AUC·반응 시작·최고점 도달
+  anomaly.py           모델 B: 수조별 정상 기준(분 단위 μ·σ, σ 하한) → 매 분 점수·등급(조기 경보)
+  engine.py            StreamingAnalyzer: feed(chunk) → 이벤트(clicks/minute/score/alert/final)
+  dataset.py           세션 폴더 읽기
+  train.py, evaluate.py
+artifacts/             가중치·기준·리포트 (git 제외)
 ```
 
+### 데이터 사용 원칙
+- 모델 A 학습: A 수조(소음 차단) 1–3일차, 검증: A 4일차. **B 수조(운영 소음)는 학습에 쓰지 않고 시험만** → 소음 강건성.
+- 증강은 일반 백색 잡음과 ±1 ms 이동만. B 의 기포 소리는 학습 중에 보지 않는다.
+- 정상 기준은 정답 클릭이 아니라 **모델 A 출력** G(t) 로 만든다(실사용과 같은 조건).
+- 모델 B 평가: 수조 안에서 하루씩 빼고 기준을 만든 뒤 뺀 날로 오경보율, 그 날을 변형한 합성 이상(Peak 감소·지연·조기 감쇠)으로 탐지율.
+- 현재 데이터는 모크(샘플 클릭 16개 기반)라 수치는 **파이프라인 검증용이며 실측 성능이 아니다.**
+
+### 모델 B 점수
+`Score = 0.5·max(0, −z_AUC) + 0.3·max(0, −z_peak) + 0.2·max(0, z_onset)` — 급이 후 0분부터 지금까지를 같은 경과 시간의 정상 기준과 비교.
+주의 ≥ 1.0, 경보 ≥ 2.0, 급이 후 3분부터 등급을 낸다. 10분에 조기 판정, 30분에 확정. 값은 `AnomalyConfig`.
+
 ## 할 일
-- [ ] 신호처리 Baseline 검출기와 평가 스크립트
-- [ ] 활동 지표 · 정상 기준 · 이상 점수
-- [ ] 실데이터 라벨이 모이면 CNN 검출기 (KPI: F1 ≥ 0.85, CPM MAE 20% 감소)
+- [x] 신호처리 베이스라인·2단계 CNN·스트리밍 엔진
+- [x] 활동 지표 · 정상 기준 · 이상 점수
+- [ ] 실측 데이터: Day 1 로 대역·임계값 재설정, 사람 라벨로 CNN 재학습
