@@ -53,20 +53,27 @@ export function AlertBanner({ alerts }) {
   );
 }
 
-/** 지표별 정상 기준 vs 현재 */
-export function ComparisonTable({ rows }) {
+/**
+ * 지표별 정상 기준 vs 현재. "±" 는 정상 4일 동안 그 지표가 날마다 달랐던 정도(설명용, 점수 계산에는 안 씀).
+ * onsetFloor: 반응 시작은 점수 계산 때 이만큼(분)은 원래 흔들린다고 본다.
+ */
+export function ComparisonTable({ rows, onsetFloor }) {
   if (!rows?.length) return <p className="muted">정상 기준이 없어 비교하지 않았습니다.</p>;
   return (
     <table className="table compact">
-      <thead><tr><th>지표</th><th>정상 기준</th><th>현재</th><th>변화율</th></tr></thead>
+      <thead><tr><th>지표</th><th>정상 4일 평균 ± 날짜별 차이</th><th>현재</th><th>변화율</th></tr></thead>
       <tbody>
         {rows.map((r) => {
           const m = METRICS[r.metric] ?? { label: r.metric, unit: "" };
           const worse = r.metric === "onset_min" || r.metric === "peak_min" ? r.change_pct > 0 : r.change_pct < 0;
+          const floorNote = r.metric === "onset_min" && onsetFloor && (r.normal_sd ?? 0) < onsetFloor;
           return (
             <tr key={r.metric}>
               <td>{m.label}</td>
-              <td>{num(r.normal_mean, 1)}{m.unit} <span className="muted">± {num(r.normal_sd, 1)}</span></td>
+              <td>
+                {num(r.normal_mean, 1)}{m.unit} <span className="muted">± {num(r.normal_sd, 1)}</span>
+                {floorNote && <div className="muted small">점수 계산엔 최소 ±{onsetFloor}분 차이로 봄</div>}
+              </td>
               <td><b>{r.current ?? "—"}</b>{m.unit}</td>
               <td className={r.change_pct === null ? "" : worse && Math.abs(r.change_pct) >= 20 ? "neg" : ""}>
                 {pct(r.change_pct)}
