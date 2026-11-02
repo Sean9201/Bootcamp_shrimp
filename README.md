@@ -4,6 +4,17 @@
 
 > 하이드로폰 녹음 → 클릭 검출 → 분당 클릭 수 G(t) → 정상 기준과 비교한 이상 점수 → 관리자 점검 알림
 
+## 시연 실행 (중간발표)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-demo.ps1
+```
+
+백엔드(8000)·프론트(5500) 창이 열리고 브라우저가 `분석하기` 화면으로 열린다.
+샘플 "운영 소음 · 정상 예시" → 분석 시작(40배속, 약 1분) → 이어서 "운영 소음 · 이상 예시".
+준비물: `ai/artifacts/`(학습 결과), `data_pipeline/data/synthetic/mock_v1/`(모크 데이터), `frontend/node_modules`, `backend/.env`(Gemini 키, 없으면 템플릿 문장).
+발표 설명 포인트는 [`docs/presentation-notes.md`](docs/presentation-notes.md).
+
 ## 구성
 
 | 폴더 | 담당 브랜치 | 내용 |
