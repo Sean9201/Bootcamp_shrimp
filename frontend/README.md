@@ -1,6 +1,11 @@
 # frontend
 
-관리자 웹 화면 (React 18 + Vite 5 + Recharts). 작업 브랜치: `frontend`
+**TickTechTok** 관리자 웹 화면 (React 18 + Vite 5 + Recharts). 작업 브랜치: `frontend`
+
+디자인 "양식장 평면도": 메뉴 막대 대신 위쪽 글자 메뉴(수조 현황 · 급이 분석 · 분석 이력 · 점검 알림 · 모델 성능),
+수조 6개를 실제 배치(소음 차단 동 / 운영 소음 동)대로 그린 평면도가 탐색의 중심. 데이터 색은 청록 하나(이번 급이 곡선),
+빨강은 경보에만. 글꼴은 검은고딕(수조 이름·큰 숫자)과 Gothic A1(본문)을 `@fontsource` 로 포함 — 인터넷 없이도 같은 모양.
+색 값은 `src/styles.css` 의 `:root` 와 `src/theme.js`(차트용)가 같다.
 외부 CDN·웹폰트 없이 동작한다(발표장 오프라인 시연 대비). 단, AI 인사이트(Gemini)는 백엔드가 인터넷을 쓴다 — 끊기면 템플릿 문장.
 
 ## 실행 (PowerShell, frontend 폴더에서)

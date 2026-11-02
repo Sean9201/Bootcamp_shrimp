@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { getSamples, getTanks, startSample, uploadAnalysis } from "../api.js";
 import { Card, ErrorBox } from "../components/Bits.jsx";
 import { conditionLabel } from "../format.js";
@@ -19,13 +19,15 @@ function nowLocal() {
 
 export default function Analyze() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
   const [mode, setMode] = useState("sample");
   const [samples, setSamples] = useState([]);
   const [tanks, setTanks] = useState([]);
   const [sampleId, setSampleId] = useState("");
   const [speed, setSpeed] = useState(40);
   const [file, setFile] = useState(null);
-  const [form, setForm] = useState({ tank_id: "B1", fed_at: nowLocal(), offset_min: 10, feed_amount_g: 100 });
+  // 수조 현황·분석 화면에서 넘어오면 그 수조를 미리 고른다(?tank=B1)
+  const [form, setForm] = useState({ tank_id: params.get("tank") || "B1", fed_at: nowLocal(), offset_min: 10, feed_amount_g: 100 });
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const [err, setErr] = useState(null);
@@ -70,8 +72,8 @@ export default function Analyze() {
     <div className="page narrow">
       <div className="page-h">
         <div>
-          <h1>분석하기</h1>
-          <p className="muted">급이 전 10분 ~ 급이 후 30분 수중 녹음(WAV)을 넣으면 클릭을 검출하고 정상 반응과 비교합니다.</p>
+          <h1>급이 분석</h1>
+          <p>급이 전 10분 ~ 급이 후 30분 수중 녹음(WAV)을 넣으면 클릭을 검출하고 같은 수조의 정상 반응과 비교합니다.</p>
         </div>
       </div>
 

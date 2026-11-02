@@ -3,6 +3,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { getModelReport } from "../api.js";
 import { Card, ErrorBox } from "../components/Bits.jsx";
 import { conditionLabel } from "../format.js";
+import { COLOR } from "../theme.js";
 
 const DET = { baseline: "신호처리 (A 로 기준값)", baseline_day1: "신호처리 (1일차로 기준값)", cnn: "AI: 후보 + CNN" };
 const GROUP = { A_val: "소음 차단 · A 4일차", B_test_noise: "운영 소음 · B 1–4일차", B_day2_4: "운영 소음 · B 2–4일차 (공정 비교)" };
@@ -27,12 +28,12 @@ export default function Model() {
 
       <Card title="모델 A — 클릭 검출" right={<span className="muted small">정답과 ±5 ms 1:1 매칭</span>}>
         <table className="table">
-          <thead><tr><th>조건</th><th>방식</th><th>Precision</th><th>Recall</th><th>F1</th><th>분당 클릭 수 오차</th></tr></thead>
+          <thead><tr><th>조건</th><th>방식</th><th className="n">Precision</th><th className="n">Recall</th><th className="n">F1</th><th className="n">분당 클릭 수 오차</th></tr></thead>
           <tbody>
             {Object.entries(r.model_a).flatMap(([g, rows]) => Object.entries(rows).map(([d, m], i) => (
               <tr key={g + d} className={d === "cnn" ? "hl" : ""}>
                 <td>{i === 0 ? GROUP[g] ?? g : ""}</td><td>{DET[d] ?? d}</td>
-                <td>{f(m.precision)}</td><td>{f(m.recall)}</td><td><b>{f(m.f1)}</b></td><td>{f(m.cpm_mae, 2)}</td>
+                <td className="n">{f(m.precision)}</td><td className="n">{f(m.recall)}</td><td className="n"><b>{f(m.f1)}</b></td><td className="n">{f(m.cpm_mae, 2)}</td>
               </tr>
             )))}
           </tbody>
@@ -47,15 +48,15 @@ export default function Model() {
         <Card title="CNN 학습 기록" right={<span className="muted small">학습 패치 {r.training.n_train_patches?.toLocaleString()}개</span>}>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={r.training.history} margin={{ top: 8, right: 24, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="#eaeef2" />
-              <XAxis dataKey="epoch" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="l" tick={{ fontSize: 12 }} width={44} />
-              <YAxis yAxisId="r" orientation="right" domain={[0.9, 1]} tick={{ fontSize: 12 }} width={44} />
+              <CartesianGrid stroke={COLOR.grid} vertical={false} />
+              <XAxis dataKey="epoch" tick={{ fontSize: 12, fill: COLOR.muted }} axisLine={{ stroke: COLOR.axis }} tickLine={false} />
+              <YAxis yAxisId="l" tick={{ fontSize: 12, fill: COLOR.muted }} width={44} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="r" orientation="right" domain={[0.9, 1]} tick={{ fontSize: 12, fill: COLOR.muted }} width={44} axisLine={false} tickLine={false} />
               <Tooltip />
-              <Legend />
-              <Line yAxisId="l" dataKey="train_loss" name="학습 손실" stroke="#8250df" dot />
-              <Line yAxisId="l" dataKey="val_loss" name="검증 손실" stroke="#bf8700" dot />
-              <Line yAxisId="r" dataKey="val_f1" name="검증 F1" stroke="#1a7f37" strokeWidth={2} dot />
+              <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
+              <Line yAxisId="l" dataKey="train_loss" name="학습 손실 (왼쪽)" stroke={COLOR.text} dot={false} isAnimationActive={false} />
+              <Line yAxisId="l" dataKey="val_loss" name="검증 손실 (왼쪽)" stroke={COLOR.mean} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+              <Line yAxisId="r" dataKey="val_f1" name="검증 F1 (오른쪽)" stroke={COLOR.hue} strokeWidth={2.5} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </Card>
@@ -70,13 +71,13 @@ export default function Model() {
         </Card>
         <Card title="모델 B — 합성 이상 탐지율">
           <table className="table">
-            <thead><tr><th>변형</th><th>강도</th><th>경보</th><th>주의 이상</th><th>첫 경보</th></tr></thead>
+            <thead><tr><th>변형</th><th className="n">강도</th><th className="n">경보</th><th className="n">주의 이상</th><th className="n">첫 경보</th></tr></thead>
             <tbody>
               {b.synthetic_detection.map((x) => (
                 <tr key={x.kind + x.level}>
-                  <td>{VARIANT[x.kind] ?? x.kind}</td><td>{x.level}</td>
-                  <td>{(x.alert_rate * 100).toFixed(0)}%</td><td>{(x.watch_or_alert_rate * 100).toFixed(0)}%</td>
-                  <td>{x.median_first_alert_min === null ? "—" : `${x.median_first_alert_min}분`}</td>
+                  <td>{VARIANT[x.kind] ?? x.kind}</td><td className="n">{x.level}</td>
+                  <td className="n">{(x.alert_rate * 100).toFixed(0)}%</td><td className="n">{(x.watch_or_alert_rate * 100).toFixed(0)}%</td>
+                  <td className="n">{x.median_first_alert_min === null ? "—" : `${x.median_first_alert_min}분`}</td>
                 </tr>
               ))}
             </tbody>
@@ -87,11 +88,11 @@ export default function Model() {
       {r.conditions?.reproducibility && (
         <Card title="재현성 — 같은 수조 4일간 곡선">
           <table className="table">
-            <thead><tr><th>수조</th><th>조건</th><th>곡선 형태 상관 (평균 / 최소)</th><th>Peak 변동계수</th><th>AUC10 변동계수</th></tr></thead>
+            <thead><tr><th>수조</th><th>조건</th><th className="n">곡선 형태 상관 (평균 / 최소)</th><th className="n">Peak 변동계수</th><th className="n">AUC10 변동계수</th></tr></thead>
             <tbody>
               {r.conditions.reproducibility.map((x) => (
-                <tr key={x.tank}><td>{x.tank}</td><td>{conditionLabel(x.condition)}</td>
-                  <td>{f(x.shape_corr_mean)} / {f(x.shape_corr_min)}</td><td>{f(x.peak_cv)}</td><td>{f(x.auc10_cv)}</td></tr>
+                <tr key={x.tank}><td><b>{x.tank}</b></td><td>{conditionLabel(x.condition)}</td>
+                  <td className="n">{f(x.shape_corr_mean)} / {f(x.shape_corr_min)}</td><td className="n">{f(x.peak_cv)}</td><td className="n">{f(x.auc10_cv)}</td></tr>
               ))}
             </tbody>
           </table>
