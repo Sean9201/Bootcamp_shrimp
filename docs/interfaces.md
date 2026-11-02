@@ -118,7 +118,7 @@ SSE 이벤트 순서: `meta` → (`progress`·`clicks`·`minute`·`score`·`aler
 
 | type | 필드 |
 |---|---|
-| `meta` | `analysis_id, tank_id, noise_condition, speed, duration_sec, feeding_offset_sec, pre_min, post_min, thresholds{watch, alert}, baseline(위 상세와 같음 또는 null), classifier` |
+| `meta` | `analysis_id, tank_id, noise_condition, speed, duration_sec, feeding_offset_sec, pre_min, post_min, thresholds{watch, alert, onset_sd_floor_min}, baseline(위 상세와 같음 또는 null), classifier` |
 | `insight_pending` | — (LLM 응답 기다리는 중) |
 | `insight` | `content{summary, bullets[], recommendation}, source(gemini|template), model, attempts, problems[], facts` |
 | `done` / `error` | `analysis_id` / `message, detail` |
