@@ -1,5 +1,6 @@
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { METRICS, gradeLabel, gradeTone, num, pct } from "../format.js";
+import { COLOR } from "../theme.js";
 
 export function GradeBadge({ grade, big }) {
   return <span className={`badge ${gradeTone(grade)}${big ? " big" : ""}`}>{gradeLabel(grade)}</span>;
@@ -61,7 +62,7 @@ export function ComparisonTable({ rows, onsetFloor }) {
   if (!rows?.length) return <p className="muted">정상 기준이 없어 비교하지 않았습니다.</p>;
   return (
     <table className="table compact">
-      <thead><tr><th>지표</th><th>정상 4일 평균 ± 날짜별 차이</th><th>현재</th><th>변화율</th></tr></thead>
+      <thead><tr><th>지표</th><th className="n">정상 4일 평균 ± 날짜별 차이</th><th className="n">이번 급이</th><th className="n">변화율</th></tr></thead>
       <tbody>
         {rows.map((r) => {
           const m = METRICS[r.metric] ?? { label: r.metric, unit: "" };
@@ -70,12 +71,12 @@ export function ComparisonTable({ rows, onsetFloor }) {
           return (
             <tr key={r.metric}>
               <td>{m.label}</td>
-              <td>
+              <td className="n">
                 {num(r.normal_mean, 1)}{m.unit} <span className="muted">± {num(r.normal_sd, 1)}</span>
                 {floorNote && <div className="muted small">점수 계산엔 최소 ±{onsetFloor}분 차이로 봄</div>}
               </td>
-              <td><b>{r.current ?? "—"}</b>{m.unit}</td>
-              <td className={r.change_pct === null ? "" : worse && Math.abs(r.change_pct) >= 20 ? "neg" : ""}>
+              <td className="n"><b>{r.current ?? "—"}</b>{m.unit}</td>
+              <td className={`n${r.change_pct !== null && worse && Math.abs(r.change_pct) >= 20 ? " neg" : ""}`}>
                 {pct(r.change_pct)}
               </td>
             </tr>
@@ -86,12 +87,13 @@ export function ComparisonTable({ rows, onsetFloor }) {
   );
 }
 
-/** AI 인사이트 */
-export function InsightCard({ insight, pending, waiting }) {
+/** AI 인사이트 본문(해석 중 · 대기 · 결과 + 출처 배지) */
+export function InsightBody({ insight, pending, waiting }) {
   const c = insight?.content;
   const src = insight?.source === "gemini" ? `Gemini (${insight.model})` : "템플릿 문장";
   return (
-    <Card title="AI 인사이트" right={insight && <span className="chip">{src}</span>} className="insight">
+    <div className="insight">
+      <div className="sec-h"><b>AI 인사이트</b>{insight && <span>{src} · 수치만 전송</span>}</div>
       {pending && <p className="pulse">AI 가 이번 급이 결과를 해석하는 중입니다…</p>}
       {!pending && !c && <p className="muted">{waiting ? "급이 후 30분 분석이 끝나면 표시됩니다." : "인사이트가 없습니다."}</p>}
       {c && (
@@ -99,28 +101,33 @@ export function InsightCard({ insight, pending, waiting }) {
           <p className="insight-sum">{c.summary}</p>
           <ul>{c.bullets?.map((b) => <li key={b}>{b}</li>)}</ul>
           <p className="insight-rec">→ {c.recommendation}</p>
-          <p className="muted small">수치만 AI 에 보내며, 원인을 단정하는 표현과 근거 없는 숫자는 자동으로 걸러냅니다.</p>
+          <p className="muted small">원인을 단정하는 표현과 근거 없는 숫자는 자동으로 걸러냅니다.</p>
         </>
       )}
-    </Card>
+    </div>
   );
 }
 
-/** 급이 후 매 분 이상 점수와 주의·경보 기준선 */
-export function ScoreChart({ scores, thresholds }) {
+/** 급이 후 매 분 이상 점수와 주의·경보 기준선. dark: 어두운 판정 칸 위 */
+export function ScoreChart({ scores, thresholds, dark = false, height = 130 }) {
   const data = scores.map((s) => ({ x: s.minute + 1, score: s.score }));
+  const ink = dark ? COLOR.onDark : COLOR.text;
+  const tick = { fontSize: 11, fill: dark ? COLOR.onDarkMuted : COLOR.muted };
+  const neg = dark ? COLOR.onDarkNeg : COLOR.neg;
+  const warn = dark ? COLOR.onDarkWarn : COLOR.warn;
   return (
-    <ResponsiveContainer width="100%" height={150}>
-      <LineChart data={data} margin={{ top: 8, right: 36, left: 0, bottom: 0 }}>
-        <CartesianGrid stroke="#eaeef2" vertical={false} />
-        <XAxis dataKey="x" type="number" domain={[0, 30]} ticks={[0, 5, 10, 15, 20, 25, 30]} tick={{ fontSize: 11 }} />
-        <YAxis width={36} tick={{ fontSize: 11 }} domain={[0, (max) => Math.max(3, Math.ceil(max + 0.5))]} />
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 8, right: 54, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke={dark ? COLOR.onDarkLine : COLOR.grid} vertical={false} />
+        <XAxis dataKey="x" type="number" domain={[0, 30]} ticks={[0, 10, 20, 30]} tick={tick} axisLine={false} tickLine={false} />
+        <YAxis width={28} tick={tick} axisLine={false} tickLine={false} allowDecimals={false}
+               domain={[0, (max) => Math.max(3, Math.ceil(max + 0.5))]} />
         <Tooltip formatter={(v) => [Number(v).toFixed(2), "이상 점수"]} labelFormatter={(x) => `급이 후 ${x}분`} />
-        <ReferenceLine y={thresholds?.alert ?? 2} stroke="#d1242f" strokeDasharray="4 3"
-                       label={{ value: "경보", position: "right", fontSize: 11, fill: "#d1242f" }} />
-        <ReferenceLine y={thresholds?.watch ?? 1.25} stroke="#bf8700" strokeDasharray="4 3"
-                       label={{ value: "주의", position: "right", fontSize: 11, fill: "#bf8700" }} />
-        <Line dataKey="score" stroke="#cf222e" strokeWidth={2} dot={false} isAnimationActive={false} />
+        <ReferenceLine y={thresholds?.alert ?? 2} stroke={neg} strokeDasharray="4 3"
+                       label={{ value: `경보 ${thresholds?.alert ?? 2}`, position: "right", fontSize: 11, fill: neg, dy: -6 }} />
+        <ReferenceLine y={thresholds?.watch ?? 1.25} stroke={warn} strokeDasharray="4 3"
+                       label={{ value: `주의 ${thresholds?.watch ?? 1.25}`, position: "right", fontSize: 11, fill: warn, dy: 7 }} />
+        <Line dataKey="score" stroke={ink} strokeWidth={2} dot={false} isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   );

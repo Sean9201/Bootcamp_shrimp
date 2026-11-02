@@ -93,6 +93,36 @@ export function useAnalysisStream(id) {
   return state;
 }
 
+const SIMILAR_PCT = 15;   // 정상 평균 대비 ±15% 안이면 "평소와 비슷"
+
+/**
+ * 판정 칸 제목 문장: 급이 후 지금까지(끝난 분) 누적 클릭을 같은 분들의 정상 평균 합과 비교.
+ * 등급(점수)과는 별개인 설명 문장이다.
+ */
+export function feedingSummary(state) {
+  const b = state.meta?.baseline;
+  const pre = state.meta?.pre_min ?? 10;
+  if (!b) return { text: "정상 기준이 없어 활동량만 기록합니다", sub: null, pct: null };
+  let obs = 0;
+  let exp = 0;
+  let n = 0;
+  for (const [k, p] of Object.entries(state.minutes)) {
+    const m = Number(k);
+    if (m < 0) continue;
+    obs += p.cpm;
+    exp += b.mu[m + pre];
+    n += 1;
+  }
+  if (!n) return { text: "급이 전 배경 소리를 듣는 중입니다", sub: null, pct: null };
+  const change = exp ? ((obs - exp) / exp) * 100 : 0;
+  const r = Math.round(Math.abs(change));
+  const done = state.status === "done" || state.status === "finalizing";
+  const text = Math.abs(change) < SIMILAR_PCT ? `평소와 비슷하게 ${done ? "먹었습니다" : "먹고 있습니다"}`
+    : change < 0 ? `평소보다 ${r}% 덜 ${done ? "먹었습니다" : "먹고 있습니다"}`
+    : `평소보다 ${r}% 더 ${done ? "먹었습니다" : "먹고 있습니다"}`;
+  return { text, sub: `급이 후 ${n}분 누적 ${obs.toLocaleString()}회 · 같은 시간 정상 평균 ${exp.toFixed(1)}회`, pct: change };
+}
+
 /** 차트용 행: 분 구간 가운데(x = 분 + 0.5)에 정상 범위·평균·현재 값 */
 export function chartRows(state) {
   const pre = state.meta?.pre_min ?? 10;
