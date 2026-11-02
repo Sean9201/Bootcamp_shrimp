@@ -37,6 +37,9 @@ src/shrimp_ai/
 artifacts/             가중치·기준·리포트 (git 제외)
 ```
 
+### 운영 소음 처리 (발표용)
+[docs/noise-handling.md](docs/noise-handling.md) — 소음 종류, 처리 5단계, 결과, 한계. 그림은 `scripts/figure_noise_pipeline.py`.
+
 ### 데이터 사용 원칙
 - 모델 A 학습: A 수조(소음 차단) 1–3일차, 검증: A 4일차. **B 수조(운영 소음)는 학습에 쓰지 않고 시험만** → 소음 강건성.
 - 증강은 일반 백색 잡음과 ±1 ms 이동만. B 의 기포 소리는 학습 중에 보지 않는다.
