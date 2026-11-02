@@ -45,6 +45,18 @@ def test_baseline_and_scores():
     assert all(s.grade == "normal" for s in bad[:2])
 
 
+def test_grade_needs_persistence(monkeypatch):
+    """한 분만 튄 점수로는 등급이 오르지 않고, 2분 연속이면 오른다."""
+    import shrimp_ai.anomaly as an
+    from shrimp_ai.anomaly import OnlineScorer, ScoreState
+
+    raw = iter(["normal", "alert", "normal", "watch", "alert", "alert"])
+    monkeypatch.setattr(an, "score_at", lambda *a, **k: (lambda g: ScoreState(0, 0.0, g, 0, 0, 0, "provisional", g))(next(raw)))
+    sc = OnlineScorer(None)
+    grades = [sc.update(None, m).grade for m in range(6)]
+    assert grades == ["normal", "normal", "normal", "normal", "watch", "alert"]
+
+
 def test_baseline_roundtrip(tmp_path):
     b = build_baseline([curve(seed=i) for i in range(3)], "B2", None, CFG)
     b.save(tmp_path / "b.json")

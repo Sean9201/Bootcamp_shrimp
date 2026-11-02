@@ -75,11 +75,12 @@ class ScoreState:
 
     minute: int                 # 마지막으로 완료된 급이 후 분 번호
     score: float
-    grade: str
+    grade: str                  # 지속 조건을 적용한 등급(화면·경보용)
     z_auc: float
     z_peak: float
     z_onset: float
     stage: str                  # provisional | early | final
+    raw_grade: str = "normal"   # 이번 분 점수만으로 본 등급
 
     def to_dict(self) -> dict:
         return {k: (round(v, 3) if isinstance(v, float) else v) for k, v in asdict(self).items()}
@@ -121,13 +122,31 @@ def score_at(counts: np.ndarray, minute: int, base: Baseline, cfg: AnalysisConfi
     grade = grade_of(score, acfg) if minute + 1 >= acfg.min_minutes_for_alert else "normal"
     last = int(cfg.post_window_min) - 1
     stage = "final" if minute >= last else ("early" if minute + 1 == acfg.early_minute else "provisional")
-    return ScoreState(minute, float(score), grade, z_auc, z_peak, float(z_onset), stage)
+    return ScoreState(minute, float(score), grade, z_auc, z_peak, float(z_onset), stage, grade)
+
+
+class OnlineScorer:
+    """매 분 점수 → 등급. 등급은 persist_minutes 분 연속으로 그 기준 이상이어야 올라간다."""
+
+    def __init__(self, base: Baseline, cfg: AnalysisConfig = AnalysisConfig(),
+                 acfg: AnomalyConfig = AnomalyConfig()):
+        self.base, self.cfg, self.acfg = base, cfg, acfg
+        self.raw: list[str] = []
+
+    def update(self, counts: np.ndarray, minute: int) -> ScoreState:
+        s = score_at(counts, minute, self.base, self.cfg, self.acfg)
+        self.raw.append(s.raw_grade)
+        recent = self.raw[-self.acfg.persist_minutes:]
+        s.grade = (min(recent, key=GRADES.index)
+                   if len(recent) >= self.acfg.persist_minutes else "normal")
+        return s
 
 
 def score_session(counts: np.ndarray, base: Baseline, cfg: AnalysisConfig = AnalysisConfig(),
                   acfg: AnomalyConfig = AnomalyConfig()) -> list[ScoreState]:
     """급이 후 매 분의 점수 기록(오프라인 평가용, 스트리밍과 같은 계산)."""
-    return [score_at(counts, m, base, cfg, acfg) for m in range(int(cfg.post_window_min))]
+    sc = OnlineScorer(base, cfg, acfg)
+    return [sc.update(counts, m) for m in range(int(cfg.post_window_min))]
 
 
 def compare(counts: np.ndarray, base: Baseline, cfg: AnalysisConfig = AnalysisConfig(),

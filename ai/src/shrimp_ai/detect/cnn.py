@@ -47,12 +47,16 @@ class PatchSpec:
 
 
 class ClickCNN(nn.Module):
-    """합성곱 3층 + 전역 평균 풀링. 파라미터 약 2.4만 개."""
+    """합성곱 3층 + 전역 평균 풀링. 파라미터 약 2.4만 개.
+
+    정규화는 GroupNorm: BatchNorm 은 학습(잡음 증강 섞인 배치)과 추론의 통계가 달라
+    검증 성능이 epoch 마다 크게 흔들렸다.
+    """
 
     def __init__(self):
         super().__init__()
         def block(i, o, pool):  # noqa: E306
-            layers = [nn.Conv2d(i, o, 3, padding=1), nn.BatchNorm2d(o), nn.ReLU()]
+            layers = [nn.Conv2d(i, o, 3, padding=1), nn.GroupNorm(4, o), nn.ReLU()]
             return layers + ([nn.MaxPool2d(2)] if pool else [])
         self.body = nn.Sequential(*block(1, 16, True), *block(16, 32, True), *block(32, 64, False),
                                   nn.AdaptiveAvgPool2d(1), nn.Flatten())

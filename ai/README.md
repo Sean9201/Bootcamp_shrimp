@@ -28,7 +28,7 @@ src/shrimp_ai/
   sources.py           FileSource(배속 재생) / LiveSource(자리) — 실사용·시연은 이것만 다름
   detect/candidates.py 1단계: 대역통과 → 에너지 포락선 → 최근 5초 잡음 대비 임계값 → 최고점 → 불응기 병합
                        과거만 보고, 청크 크기와 무관하게 같은 결과. k 를 크게 주면 베이스라인 검출기
-  detect/cnn.py        2단계: 후보 주변 32 ms 스펙트로그램(1–20 kHz) → 작은 CNN(약 2.4만 파라미터)
+  detect/cnn.py        2단계: 후보 주변 32 ms 스펙트로그램(1–20 kHz) → 작은 CNN(약 2.4만 파라미터, GroupNorm)
   activity.py          G(t), Peak·초기 10분 AUC·30분 AUC·반응 시작·최고점 도달
   anomaly.py           모델 B: 수조별 정상 기준(분 단위 μ·σ, σ 하한) → 매 분 점수·등급(조기 경보)
   engine.py            StreamingAnalyzer: feed(chunk) → 이벤트(clicks/minute/score/alert/final)
@@ -46,7 +46,14 @@ artifacts/             가중치·기준·리포트 (git 제외)
 
 ### 모델 B 점수
 `Score = 0.5·max(0, −z_AUC) + 0.3·max(0, −z_peak) + 0.2·max(0, z_onset)` — 급이 후 0분부터 지금까지를 같은 경과 시간의 정상 기준과 비교.
-주의 ≥ 1.0, 경보 ≥ 2.0, 급이 후 3분부터 등급을 낸다. 10분에 조기 판정, 30분에 확정. 값은 `AnomalyConfig`.
+주의 ≥ 1.25, 경보 ≥ 2.0, 급이 후 3분부터, **2분 연속** 기준 이상일 때만 등급이 오른다(일시적 흔들림 무시).
+10분에 조기 판정, 30분에 확정. 값은 `AnomalyConfig`.
+
+### 베이스라인 두 가지
+- `baseline`: 신호처리만, A 검증 세션으로 임계값 선택 (CNN 과 같은 데이터 조건)
+- `baseline_day1`: 신호처리만, 설계서 v2 **Day 1 게이트** — 두 조건의 1일차로 임계값을 정하고 2–4일차에 고정.
+  B 소리를 본 베이스라인이므로 CNN 과의 공정 비교는 B 2–4일차(`B_day2_4`)에서 한다.
+- 임계값은 F1 이 거의 평평할 때 극단값으로 가지 않도록 "최고 F1 에서 0.005 안쪽인 가장 작은 k".
 
 ## 할 일
 - [x] 신호처리 베이스라인·2단계 CNN·스트리밍 엔진

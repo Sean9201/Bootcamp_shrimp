@@ -27,7 +27,8 @@ from shrimp_ai.detect.cnn import ClickClassifier, ClickCNN, PatchSpec
 from shrimp_ai.metrics import from_counts, match_flags
 
 MARGIN_SEC = 0.001          # 학습 때 시간 이동 증강 폭(±)
-K_GRID = (8, 12, 16, 20, 30, 40, 60, 80, 120, 160)
+K_GRID = (8, 12, 16, 20, 30, 40, 60, 80, 120, 160, 240, 320, 480, 640, 960, 1280)
+K_TOLERANCE = 0.005
 
 
 def collect(sessions: list[Session], spec: PatchSpec, cfg: AnalysisConfig, dcfg: DetectorConfig) -> dict:
@@ -82,11 +83,29 @@ def train(args) -> None:
     sr = sf.info(tr_s[0].audio_path).samplerate
     spec = PatchSpec(sr, PatchConfig())
     print(f"학습 세션 {len(tr_s)}개, 검증 {len(va_s)}개, sr={sr}")
-    t0 = time.perf_counter()
-    tr, va = collect(tr_s, spec, cfg, dcfg), collect(va_s, spec, cfg, dcfg)
-    print(f"패치: 학습 {len(tr['y'])} (클릭 {tr['y'].sum()}), 검증 {len(va['y'])} (클릭 {va['y'].sum()})"
-          f" — {time.perf_counter() - t0:.0f}s")
+    va = collect(va_s, spec, cfg, dcfg)
+    if not args.baseline_only:
+        t0 = time.perf_counter()
+        tr = collect(tr_s, spec, cfg, dcfg)
+        print(f"패치: 학습 {len(tr['y'])} (클릭 {tr['y'].sum()}), 검증 {len(va['y'])} (클릭 {va['y'].sum()})"
+              f" — {time.perf_counter() - t0:.0f}s")
+        fit_cnn(tr, va, spec, args, out)
 
+    # 신호처리 베이스라인 임계값 두 가지 (후보 SNR 로 근사 선택)
+    #  - baseline: A 검증 세션으로 선택 (CNN 과 같은 데이터 조건)
+    #  - baseline_day1: 설계서 v2 Day 1 게이트 — 두 조건의 1일차로 정하고 2–4일차에 고정
+    day1 = collect([s for s in load_sessions(args.data) if s.day == 1 and s.split != "demo"], spec, cfg, dcfg)
+    k_a, f1_a = pick_k(va)
+    k_d1, f1_d1 = pick_k(day1)
+    det = {"candidate_k": dcfg.candidate_k, "baseline_k": k_a, "baseline_k_day1": k_d1,
+           "baseline_val_f1_by_k": f1_a, "baseline_day1_f1_by_k": f1_d1,
+           "rule": f"F1 최고값에서 {K_TOLERANCE} 안쪽인 가장 작은 k"}
+    (out / "detector.json").write_text(json.dumps(det, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"베이스라인 k: A 검증 기준 {k_a}, Day 1 게이트 {k_d1}  → {out}")
+
+
+def fit_cnn(tr: dict, va: dict, spec: PatchSpec, args, out: Path) -> None:
+    """CNN 학습 → 검증 F1 이 가장 높은 epoch 와 판정 임계값 저장."""
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
     model = ClickCNN()
@@ -138,17 +157,17 @@ def train(args) -> None:
                                     "n_train_patches": int(len(tr["y"])), "n_train_clicks": int(pos),
                                     "augmentation": "white noise (p=0.5, ≤20% of patch peak), ±1 ms shift"})
 
-    # 신호처리 베이스라인: 같은 검증 세션에서 F1 최대인 k (후보 SNR 로 근사 선택)
-    base_f1 = {}
+
+def pick_k(d: dict) -> tuple[float, dict]:
+    """임계값 배수 k 선택. F1 이 거의 평평하면 극단값으로 가지 않도록 최고값 근처에서 가장 작은 k."""
+    f1 = {}
     for k in K_GRID:
-        pred = va["snr"] >= k
-        tp = int((pred & va["y"]).sum())
-        base_f1[k] = from_counts(tp, int((pred & ~va["y"]).sum()), va["n_truth"] - tp).f1
-    k_best = max(base_f1, key=base_f1.get)
-    det = {"candidate_k": dcfg.candidate_k, "baseline_k": k_best,
-           "baseline_val_f1_by_k": {str(k): round(v, 4) for k, v in base_f1.items()}}
-    (out / "detector.json").write_text(json.dumps(det, indent=2), encoding="utf-8")
-    print(f"베이스라인 k={k_best} (검증 F1 {base_f1[k_best]:.4f})  → {out}")
+        pred = d["snr"] >= k
+        tp = int((pred & d["y"]).sum())
+        f1[k] = from_counts(tp, int((pred & ~d["y"]).sum()), d["n_truth"] - tp).f1
+    best = max(f1.values())
+    k = min(k for k, v in f1.items() if v >= best - K_TOLERANCE)
+    return k, {str(k): round(v, 4) for k, v in f1.items()}
 
 
 def main(argv=None):
@@ -159,6 +178,7 @@ def main(argv=None):
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--baseline-only", action="store_true", help="CNN 은 그대로 두고 베이스라인 임계값만 다시 고름")
     train(ap.parse_args(argv))
 
 

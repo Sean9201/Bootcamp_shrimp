@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from shrimp_ai.activity import minute_counts
+from shrimp_ai.activity import compute_metrics, minute_counts
 from shrimp_ai.anomaly import GRADES, build_baseline, score_session
 from shrimp_ai.config import AnalysisConfig, AnomalyConfig, DetectorConfig
 from shrimp_ai.dataset import Session, load_sessions
@@ -31,6 +31,9 @@ from shrimp_ai.metrics import cpm_mae, from_counts, match_clicks
 from shrimp_ai.sources import FileSource
 
 VARIANTS = {"peak_drop": (0.75, 0.5, 0.3), "delay_min": (1, 2, 3), "early_decay_tau": (15, 8, 4)}
+# 신호처리 베이스라인: 이름 → detector.json 의 임계값 키
+BASELINES = {"baseline": "baseline_k", "baseline_day1": "baseline_k_day1"}
+DETECTORS = ("baseline", "baseline_day1", "cnn")
 
 
 def run_detectors(s: Session, clf: ClickClassifier, det: dict, cfg: AnalysisConfig) -> dict:
@@ -44,16 +47,17 @@ def run_detectors(s: Session, clf: ClickClassifier, det: dict, cfg: AnalysisConf
     prob = clf.predict_proba(np.stack([p for p in patches if p is not None]))
     cnn_t = np.array([i / sr for i, o in zip(idx, ok) if o])[prob >= clf.threshold]
     t_cnn = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    base_t = np.array([c.index / sr for c in detect_all(x, sr, cfg.chunk_sec, DetectorConfig(), k=det["baseline_k"])])
-    t_base = time.perf_counter() - t0
+    preds = {"cnn": cnn_t}
+    for name in BASELINES:
+        preds[name] = np.array([c.index / sr for c in
+                                detect_all(x, sr, cfg.chunk_sec, DetectorConfig(), k=det[BASELINES[name]])])
     truth = s.truth_clicks()
     dur = len(x) / sr
     out = {"session_id": s.session_id, "tank": s.tank, "condition": s.noise_condition, "split": s.split,
-           "label": s.label, "duration_sec": round(dur, 1), "n_truth": len(truth),
-           "speed_x_cnn": round(dur / t_cnn, 1), "speed_x_baseline": round(dur / t_base, 1)}
+           "day": s.day, "label": s.label, "duration_sec": round(dur, 1), "n_truth": len(truth),
+           "speed_x_cnn": round(dur / t_cnn, 1)}
     counts = {"truth": minute_counts(truth, s.feeding_offset_sec, cfg)}
-    for name, t in (("cnn", cnn_t), ("baseline", base_t)):
+    for name, t in preds.items():
         m = match_clicks(truth, t, cfg.eval_tolerance_ms)
         counts[name] = minute_counts(t, s.feeding_offset_sec, cfg)
         out[name] = {"tp": m.tp, "fp": m.fp, "fn": m.fn, "precision": round(m.precision, 4),
@@ -134,6 +138,41 @@ def evaluate_model_b(curves: dict, sessions: list[Session], cfg: AnalysisConfig,
             "loo": fa, "synthetic_detection": detection}
 
 
+def condition_report(counts: dict[str, dict], sessions: list[Session], rows: list[dict],
+                     cfg: AnalysisConfig, acfg: AnomalyConfig) -> dict:
+    """설계서 v2 의 '재현성'(같은 수조 4일 곡선 유지)과 '소음 영향'(조건별 지표·오검출 차이)."""
+    pre_n = int(cfg.pre_window_min)
+    normal = [s for s in sessions if s.label == "normal" and s.split in ("train", "val", "test_noise")]
+    by_tank = defaultdict(list)
+    for s in normal:
+        by_tank[s.tank].append(s)
+    cv = lambda v: round(float(np.std(v, ddof=1) / np.mean(v)), 3) if np.mean(v) else None  # noqa: E731
+    repro = []
+    for tank, ss in sorted(by_tank.items()):
+        post = np.array([counts[s.session_id]["cnn"][pre_n:] for s in ss], dtype=float)
+        r = np.corrcoef(post)[np.triu_indices(len(ss), 1)]
+        ms = [compute_metrics(np.array(counts[s.session_id]["cnn"]), cfg, acfg) for s in ss]
+        repro.append({"tank": tank, "condition": ss[0].noise_condition, "n_days": len(ss),
+                      "shape_corr_mean": round(float(r.mean()), 3), "shape_corr_min": round(float(r.min()), 3),
+                      "peak_cv": cv([m.peak_cpm for m in ms]), "auc10_cv": cv([m.auc10 for m in ms]),
+                      "onset_min": [m.onset_min for m in ms]})
+    noise = {}
+    row_by = {r["session_id"]: r for r in rows}
+    for cond in ("blocked", "operating"):
+        ss = [s for s in normal if s.noise_condition == cond]
+        if not ss:
+            continue
+        noise[cond] = {"n_sessions": len(ss)}
+        for src in ("truth", *DETECTORS):
+            ms = [compute_metrics(np.array(counts[s.session_id][src]), cfg, acfg).to_dict() for s in ss]
+            noise[cond][src] = {k: round(float(np.mean([m[k] for m in ms])), 1)
+                                for k in ("baseline_cpm", "peak_cpm", "auc10", "auc30")}
+        minutes = sum(row_by[s.session_id]["duration_sec"] for s in ss) / 60
+        for src in DETECTORS:
+            noise[cond][src]["false_per_min"] = round(sum(row_by[s.session_id][src]["fp"] for s in ss) / minutes, 2)
+    return {"reproducibility": repro, "noise_effect": noise}
+
+
 def run_demo(s: Session, clf: ClickClassifier, det: dict, out_dir: Path, cfg: AnalysisConfig,
              acfg: AnomalyConfig) -> dict:
     """실제 스트리밍 엔진(FileSource → StreamingAnalyzer)으로 시연 세션 분석."""
@@ -163,20 +202,38 @@ def write_markdown(rep: dict, path: Path) -> None:
     a, b = rep["model_a"], rep["model_b"]
     L = ["# 평가 리포트 (모크 데이터 — 실측 성능 아님)", "",
          f"- 데이터: `{rep['data']}`  · 생성 {rep['created_at']}", "", "## 모델 A: 클릭 검출", "",
+         f"- baseline: 신호처리만, A 검증으로 임계값 k={rep['detector']['baseline_k']}",
+         f"- baseline_day1: 신호처리만, 설계서 Day 1 게이트(두 조건 1일차)로 k={rep['detector']['baseline_k_day1']}",
+         "- cnn: 후보(k=8) + CNN, A 수조로만 학습 (B 소리는 학습에 쓰지 않음)", "",
          "| 조건 | 방식 | Precision | Recall | F1 | CPM MAE |", "|---|---|---|---|---|---|"]
-    for cond in ("A_val", "B_test_noise"):
-        for name in ("baseline", "cnn"):
+    for cond in ("A_val", "B_test_noise", "B_day2_4"):
+        for name in DETECTORS:
             r = a[cond][name]
             L.append(f"| {cond} | {name} | {r['precision']} | {r['recall']} | {r['f1']} | {r['cpm_mae']} |")
-    L += ["", f"- CPM MAE 감소(베이스라인 대비 CNN): A {a['mae_reduction_pct']['A_val']}%, "
-              f"B {a['mae_reduction_pct']['B_test_noise']}%",
+    L += ["", "- CPM MAE 감소(CNN, 베이스라인 대비): "
+          + ", ".join(f"{k} {v}%" for k, v in a["mae_reduction_pct"].items()),
           f"- 처리 속도(40분 녹음 기준, CNN 경로): 중앙값 {a['speed_x_cnn_median']}배속", "",
           "## 모델 B: 이상 탐지", "",
           f"- 정상 세션 오경보율(LOO, {b['loo_sessions']}개): **{b['false_alarm_rate']}** (주의 이상 {b['watch_rate']})",
+          "- 주의 임계값(1.25)·지속 2분은 이 LOO 결과를 보고 골랐으므로 수치는 다소 낙관적이다.",
           "", "| 합성 이상 | 강도 | 경보율 | 주의 이상 | 첫 경보(분, 중앙값) |", "|---|---|---|---|---|"]
     for r in b["synthetic_detection"]:
         L.append(f"| {r['kind']} | {r['level']} | {r['alert_rate']} | {r['watch_or_alert_rate']} | "
                  f"{r['median_first_alert_min']} |")
+    c = rep["conditions"]
+    L += ["", "## 재현성: 같은 수조 4일 (모델 A 출력 G(t))", "",
+          "| 수조 | 조건 | 곡선 형태 상관(평균/최소) | Peak 변동계수 | AUC10 변동계수 | 반응 시작(분) |",
+          "|---|---|---|---|---|---|"]
+    for r in c["reproducibility"]:
+        L.append(f"| {r['tank']} | {r['condition']} | {r['shape_corr_mean']} / {r['shape_corr_min']} | "
+                 f"{r['peak_cv']} | {r['auc10_cv']} | {r['onset_min']} |")
+    L += ["", "## 소음 영향: 조건별 평균 지표와 오검출", "",
+          "| 조건 | 출처 | 급이 전 CPM | Peak | AUC10 | AUC30 | 오검출/분 |", "|---|---|---|---|---|---|---|"]
+    for cond, v in c["noise_effect"].items():
+        for src in ("truth", *DETECTORS):
+            m = v[src]
+            L.append(f"| {cond} | {src} | {m['baseline_cpm']} | {m['peak_cpm']} | {m['auc10']} | {m['auc30']} | "
+                     f"{m.get('false_per_min', '—')} |")
     L += ["", "## 시연 세션 (스트리밍 엔진)", ""]
     for d in rep["demo"]:
         first = d["alerts"][0] if d["alerts"] else None
@@ -197,32 +254,37 @@ def main(argv=None):
     det = json.loads((out / "detector.json").read_text(encoding="utf-8"))
     sessions = load_sessions(a.data)
 
-    rows, curves = [], {}
+    rows, curves, all_counts = [], {}, {}
     (out / "curves").mkdir(parents=True, exist_ok=True)
     for s in sessions:
         r = run_detectors(s, clf, det, cfg)
         rows.append(r["summary"])
         curves[s.session_id] = r["counts"]["cnn"]
+        all_counts[s.session_id] = r["counts"]
         (out / "curves" / f"{s.session_id}.json").write_text(json.dumps(r["counts"]), encoding="utf-8")
         sm = r["summary"]
-        print(f"{s.session_id:>20} {sm['split']:<10} base F1={sm['baseline']['f1']:.3f} MAE={sm['baseline']['cpm_mae']:.2f}"
-              f" | cnn F1={sm['cnn']['f1']:.3f} MAE={sm['cnn']['cpm_mae']:.2f} | {sm['speed_x_cnn']}x")
+        print(f"{s.session_id:>20} {sm['split']:<10} "
+              + " | ".join(f"{n} F1={sm[n]['f1']:.3f} MAE={sm[n]['cpm_mae']:.2f}" for n in DETECTORS)
+              + f" | {sm['speed_x_cnn']}x")
 
     groups = {"A_val": [r for r in rows if r["split"] == "val"],
               "B_test_noise": [r for r in rows if r["split"] == "test_noise"],
+              # Day 1 게이트 베이스라인은 1일차로 임계값을 정했으므로 공정 비교는 2–4일차
+              "B_day2_4": [r for r in rows if r["split"] == "test_noise" and (r["day"] or 0) >= 2],
               "A_train": [r for r in rows if r["split"] == "train"]}
-    model_a = {g: {n: aggregate(v, n) for n in ("baseline", "cnn")} for g, v in groups.items()}
+    model_a = {g: {n: aggregate(v, n) for n in DETECTORS} for g, v in groups.items()}
     model_a["mae_reduction_pct"] = {
-        g: round((1 - model_a[g]["cnn"]["cpm_mae"] / model_a[g]["baseline"]["cpm_mae"]) * 100, 1)
-        if model_a[g]["baseline"]["cpm_mae"] else None for g in ("A_val", "B_test_noise")}
+        f"{g}_vs_{b}": round((1 - model_a[g]["cnn"]["cpm_mae"] / model_a[g][b]["cpm_mae"]) * 100, 1)
+        for g in ("A_val", "B_day2_4") for b in BASELINES if model_a[g][b]["cpm_mae"]}
     model_a["speed_x_cnn_median"] = float(np.median([r["speed_x_cnn"] for r in rows]))
     model_a["sessions"] = rows
 
     model_b = evaluate_model_b(curves, sessions, cfg, acfg, out)
+    conditions = condition_report(all_counts, sessions, rows, cfg, acfg)
     demo = [run_demo(s, clf, det, out, cfg, acfg) for s in sessions if s.split == "demo"]
     rep = {"created_at": time.strftime("%Y-%m-%d %H:%M"), "data": str(a.data), "note": "모크 데이터 — 실측 성능 아님",
            "detector": det, "classifier_threshold": clf.threshold, "model_a": model_a, "model_b": model_b,
-           "demo": demo}
+           "conditions": conditions, "demo": demo}
     (out / "eval_report.json").write_text(json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
     write_markdown(rep, out / "eval_report.md")
     print((out / "eval_report.md").read_text(encoding="utf-8"))

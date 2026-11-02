@@ -60,7 +60,8 @@ class AnomalyConfig:
     w_auc: float = 0.5                # Score = w_auc·(−z_AUC)+ + w_peak·(−z_peak)+ + w_onset·(z_onset)+
     w_peak: float = 0.3
     w_onset: float = 0.2
-    watch_score: float = 1.0          # 주의
+    watch_score: float = 1.25         # 주의 (1.0 에서 정상 세션 '주의' 비율 29% → 1.25 에서 17%, 모크 LOO 기준)
     alert_score: float = 2.0          # 경보 (시안의 임계값 2.0)
     min_minutes_for_alert: int = 3    # 급이 후 이 분 수가 지나야 등급을 낸다
+    persist_minutes: int = 2          # 이 분 수 연속으로 기준을 넘어야 등급이 올라감(일시적 흔들림 무시)
     early_minute: int = 10            # 조기 판정 시점

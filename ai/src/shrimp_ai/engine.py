@@ -18,7 +18,7 @@ import time
 import numpy as np
 
 from shrimp_ai.activity import compute_metrics, minute_axis
-from shrimp_ai.anomaly import GRADES, Baseline, compare, score_at
+from shrimp_ai.anomaly import GRADES, Baseline, OnlineScorer, compare
 from shrimp_ai.config import AnalysisConfig, AnomalyConfig
 from shrimp_ai.detect.candidates import Candidate, StreamingCandidateDetector
 from shrimp_ai.detect.cnn import ClickClassifier
@@ -48,6 +48,7 @@ class StreamingAnalyzer:
         self.elapsed = 0.0                        # 순수 계산 시간(초)
         if baseline is not None:
             self.lo, self.hi = baseline.band()
+            self.scorer = OnlineScorer(baseline, cfg, acfg)
 
     # ------------------------------------------------------------ 내부
     def _classify_ready(self, final: bool) -> list[float]:
@@ -87,7 +88,7 @@ class StreamingAnalyzer:
                 e.update(mu=self.base.mu[i], lo=round(float(self.lo[i]), 2), hi=round(float(self.hi[i]), 2))
             ev.append(e)
             if self.base is not None and m >= 0:
-                s = score_at(self.counts, m, self.base, self.cfg, self.acfg)
+                s = self.scorer.update(self.counts, m)
                 self.last_score = s
                 ev.append({"type": "score", **s.to_dict()})
                 if GRADES.index(s.grade) > GRADES.index(self.grade):

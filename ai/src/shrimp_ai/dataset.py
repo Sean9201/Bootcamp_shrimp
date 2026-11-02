@@ -42,6 +42,10 @@ class Session:
         return self.meta.get("label")
 
     @property
+    def day(self) -> int | None:
+        return self.meta.get("day")
+
+    @property
     def split(self) -> str | None:
         return (self.meta.get("synthetic") or {}).get("split") or self.meta.get("split")
 
