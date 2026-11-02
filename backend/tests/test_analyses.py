@@ -69,6 +69,7 @@ def test_upload_with_baseline_scores_and_alerts(client, settings, tmp_path):
     ev = wait_done(client, aid)
     meta = ev[0]
     assert meta["baseline"]["tank"] == "A1" and len(meta["baseline"]["lo"]) == 40
+    assert meta["thresholds"] == {"watch": 1.25, "alert": 2.0, "onset_sd_floor_min": 0.7}
     assert any(e["type"] == "alert" and e["level"] == "alert" for e in ev)
     d = client.get(f"/api/v1/analyses/{aid}").json()
     assert d["max_grade"] == "alert" and d["comparison"] and d["alerts"]

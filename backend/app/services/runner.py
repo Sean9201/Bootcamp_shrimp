@@ -81,7 +81,8 @@ class Runner:
             "type": "meta", "analysis_id": analysis_id, "tank_id": tank_id, "noise_condition": noise,
             "speed": speed, "duration_sec": round(src.duration_sec, 1), "feeding_offset_sec": offset,
             "pre_min": self.cfg.pre_window_min, "post_min": self.cfg.post_window_min,
-            "thresholds": {"watch": self.acfg.watch_score, "alert": self.acfg.alert_score},
+            "thresholds": {"watch": self.acfg.watch_score, "alert": self.acfg.alert_score,
+                           "onset_sd_floor_min": self.acfg.onset_sd_floor_min},
             "baseline": baseline_band(base), "classifier": self.ai.classifier is not None})
 
         alerts: list[dict] = []
