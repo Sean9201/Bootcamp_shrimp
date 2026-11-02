@@ -5,6 +5,10 @@ pydantic-settings==2.16.1
 python-multipart==0.0.32
 SQLAlchemy==2.1.5
 alembic==1.20.0
+soundfile==0.14.0
+langgraph==1.2.19
+google-genai==2.34.0
+# 분석 엔진: ai 폴더의 shrimp_ai (pip install -e ..\ai) — numpy·scipy·torch 는 그쪽 requirements
 # 테스트
 pytest==9.1.1
 httpx==0.28.1
