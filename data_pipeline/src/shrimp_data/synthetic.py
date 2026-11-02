@@ -383,8 +383,10 @@ def standard_specs() -> list[SessionSpec]:
                 split = "test_noise"
             date = (FIRST_DAY + timedelta(days=day - 1)).strftime("%Y-%m-%d")
             specs.append(SessionSpec(f"{date}_{tank}", tank, day, "normal", split))
-    specs.append(SessionSpec("demo_normal_A1", "A1", 5, "normal", "demo"))
-    specs.append(SessionSpec("demo_abnormal_A1", "A1", 5, "abnormal", "demo"))
+    # 시연용: 운영 소음(B1)이 주 시나리오, 소음 차단(A1)은 비교용
+    for tank in ("B1", "A1"):
+        specs.append(SessionSpec(f"demo_normal_{tank}", tank, 5, "normal", "demo"))
+        specs.append(SessionSpec(f"demo_abnormal_{tank}", tank, 5, "abnormal", "demo"))
     return specs
 
 
